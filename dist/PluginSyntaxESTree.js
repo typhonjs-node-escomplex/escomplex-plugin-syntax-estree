@@ -42,7 +42,19 @@ var PluginSyntaxESTree = function (_AbstractSyntaxLoader) {
   }
 
   _createClass(PluginSyntaxESTree, [{
-    key: 'ArrayExpression',
+    key: 'onConfigure',
+
+    /**
+     * Loads any default settings that are not already provided by any user options.
+     *
+     * @param {object}   ev - escomplex plugin event data.
+     */
+    value: function onConfigure(ev) {
+      ev.data.settings.logicalor = typeof ev.data.options.logicalor === 'boolean' ? ev.data.options.logicalor : true;
+      ev.data.settings.switchcase = typeof ev.data.options.switchcase === 'boolean' ? ev.data.options.switchcase : true;
+      ev.data.settings.forin = typeof ev.data.options.forin === 'boolean' ? ev.data.options.forin : false;
+      ev.data.settings.trycatch = typeof ev.data.options.trycatch === 'boolean' ? ev.data.options.trycatch : false;
+    }
 
     // Core / ES5 ESTree AST nodes -----------------------------------------------------------------------------------
 
@@ -51,6 +63,9 @@ var PluginSyntaxESTree = function (_AbstractSyntaxLoader) {
      * @see https://github.com/estree/estree/blob/master/spec.md#arrayexpression
      * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
      */
+
+  }, {
+    key: 'ArrayExpression',
     value: function ArrayExpression() {
       return (0, _actualise2.default)(0, 0, '[]');
     }

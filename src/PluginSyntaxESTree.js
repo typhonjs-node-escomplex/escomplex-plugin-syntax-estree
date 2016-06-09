@@ -11,6 +11,19 @@ let amdPathAliases = {};
  */
 export default class PluginSyntaxESTree extends AbstractSyntaxLoader
 {
+   /**
+    * Loads any default settings that are not already provided by any user options.
+    *
+    * @param {object}   ev - escomplex plugin event data.
+    */
+   onConfigure(ev)
+   {
+      ev.data.settings.logicalor = typeof ev.data.options.logicalor === 'boolean' ? ev.data.options.logicalor : true;
+      ev.data.settings.switchcase = typeof ev.data.options.switchcase === 'boolean' ? ev.data.options.switchcase : true;
+      ev.data.settings.forin = typeof ev.data.options.forin === 'boolean' ? ev.data.options.forin : false;
+      ev.data.settings.trycatch = typeof ev.data.options.trycatch === 'boolean' ? ev.data.options.trycatch : false;
+   }
+
    // Core / ES5 ESTree AST nodes -----------------------------------------------------------------------------------
 
    /**
