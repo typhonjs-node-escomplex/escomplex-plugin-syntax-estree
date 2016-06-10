@@ -1,8 +1,8 @@
 'use strict';
 
-import AbstractSyntaxLoader   from 'escomplex-core-commons/src/plugin/syntax/AbstractSyntaxLoader.js';
-import actualise              from 'escomplex-core-commons/src/traits/actualise.js';
-import safeName               from 'escomplex-core-commons/src/traits/safeName.js';
+import AbstractSyntaxLoader   from 'typhonjs-escomplex-commons/src/plugin/syntax/AbstractSyntaxLoader.js';
+import actualise              from 'typhonjs-escomplex-commons/src/traits/actualise.js';
+import safeName               from 'typhonjs-escomplex-commons/src/traits/safeName.js';
 
 let amdPathAliases = {};
 
