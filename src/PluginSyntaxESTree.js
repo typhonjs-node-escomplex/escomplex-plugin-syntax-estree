@@ -12,6 +12,8 @@ import safeName               from 'typhonjs-escomplex-commons/src/traits/safeNa
  */
 export default class PluginSyntaxESTree extends AbstractSyntaxLoader
 {
+   // ESComplexModule plugin callbacks ------------------------------------------------------------------------------
+
    /**
     * Loads any default settings that are not already provided by any user options.
     *
