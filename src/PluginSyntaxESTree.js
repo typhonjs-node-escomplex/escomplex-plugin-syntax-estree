@@ -4,10 +4,11 @@ import AbstractSyntaxLoader   from 'typhonjs-escomplex-commons/src/plugin/syntax
 import actualise              from 'typhonjs-escomplex-commons/src/traits/actualise.js';
 import safeName               from 'typhonjs-escomplex-commons/src/traits/safeName.js';
 
-let amdPathAliases = {};
-
 /**
- * Provides escomplex trait resolution for all ESTree AST nodes up to and including ES6.
+ * Provides an typhonjs-escomplex-module / ESComplexModule plugin which loads syntax definitions for trait resolution
+ * for all ESTree AST nodes up to and including ES6.
+ *
+ * @see https://www.npmjs.com/package/typhonjs-escomplex-module
  */
 export default class PluginSyntaxESTree extends AbstractSyntaxLoader
 {
@@ -15,12 +16,27 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
     * Loads any default settings that are not already provided by any user options.
     *
     * @param {object}   ev - escomplex plugin event data.
+    *
+    * The following options are:
+    * ```
+    * (boolean)   forin - Boolean indicating whether for...in / for...of loops should be considered a source of
+    *                     cyclomatic complexity; defaults to false.
+    *
+    * (boolean)   logicalor - Boolean indicating whether operator || should be considered a source of cyclomatic
+    *                         complexity; defaults to true.
+    *
+    * (boolean)   switchcase - Boolean indicating whether switch statements should be considered a source of cyclomatic
+    *                          complexity; defaults to true.
+    *
+    * (boolean)   trycatch - Boolean indicating whether catch clauses should be considered a source of cyclomatic
+    *                        complexity; defaults to false.
+    * ```
     */
    onConfigure(ev)
    {
+      ev.data.settings.forin = typeof ev.data.options.forin === 'boolean' ? ev.data.options.forin : false;
       ev.data.settings.logicalor = typeof ev.data.options.logicalor === 'boolean' ? ev.data.options.logicalor : true;
       ev.data.settings.switchcase = typeof ev.data.options.switchcase === 'boolean' ? ev.data.options.switchcase : true;
-      ev.data.settings.forin = typeof ev.data.options.forin === 'boolean' ? ev.data.options.forin : false;
       ev.data.settings.trycatch = typeof ev.data.options.trycatch === 'boolean' ? ev.data.options.trycatch : false;
    }
 
@@ -68,6 +84,8 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
     */
    CallExpression()
    {
+      let amdPathAliases = {};
+
       return actualise(
          (node) => { return node.callee.type === 'FunctionExpression' ? 1 : 0; },   // lloc
          0,                                                                         // cyclomatic

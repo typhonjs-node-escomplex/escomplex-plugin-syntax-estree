@@ -26,10 +26,11 @@ function _possibleConstructorReturn(self, call) { if (!self) { throw new Referen
 
 function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
 
-var amdPathAliases = {};
-
 /**
- * Provides escomplex trait resolution for all ESTree AST nodes up to and including ES6.
+ * Provides an typhonjs-escomplex-module / ESComplexModule plugin which loads syntax definitions for trait resolution
+ * for all ESTree AST nodes up to and including ES6.
+ *
+ * @see https://www.npmjs.com/package/typhonjs-escomplex-module
  */
 
 var PluginSyntaxESTree = function (_AbstractSyntaxLoader) {
@@ -48,11 +49,26 @@ var PluginSyntaxESTree = function (_AbstractSyntaxLoader) {
      * Loads any default settings that are not already provided by any user options.
      *
      * @param {object}   ev - escomplex plugin event data.
+     *
+     * The following options are:
+     * ```
+     * (boolean)   forin - Boolean indicating whether for...in / for...of loops should be considered a source of
+     *                     cyclomatic complexity; defaults to false.
+     *
+     * (boolean)   logicalor - Boolean indicating whether operator || should be considered a source of cyclomatic
+     *                         complexity; defaults to true.
+     *
+     * (boolean)   switchcase - Boolean indicating whether switch statements should be considered a source of cyclomatic
+     *                          complexity; defaults to true.
+     *
+     * (boolean)   trycatch - Boolean indicating whether catch clauses should be considered a source of cyclomatic
+     *                        complexity; defaults to false.
+     * ```
      */
     value: function onConfigure(ev) {
+      ev.data.settings.forin = typeof ev.data.options.forin === 'boolean' ? ev.data.options.forin : false;
       ev.data.settings.logicalor = typeof ev.data.options.logicalor === 'boolean' ? ev.data.options.logicalor : true;
       ev.data.settings.switchcase = typeof ev.data.options.switchcase === 'boolean' ? ev.data.options.switchcase : true;
-      ev.data.settings.forin = typeof ev.data.options.forin === 'boolean' ? ev.data.options.forin : false;
       ev.data.settings.trycatch = typeof ev.data.options.trycatch === 'boolean' ? ev.data.options.trycatch : false;
     }
 
@@ -131,6 +147,8 @@ var PluginSyntaxESTree = function (_AbstractSyntaxLoader) {
   }, {
     key: 'CallExpression',
     value: function CallExpression() {
+      var amdPathAliases = {};
+
       return (0, _actualise2.default)(function (node) {
         return node.callee.type === 'FunctionExpression' ? 1 : 0;
       }, // lloc
