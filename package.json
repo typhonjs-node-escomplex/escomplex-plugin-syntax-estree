@@ -20,7 +20,7 @@
     }
   ],
   "dependencies": {
-    "typhonjs-escomplex-commons": "git+https://git@github.com/typhonjs-node-escomplex/typhonjs-escomplex-commons.git"
+    "typhonjs-escomplex-commons": "^0.0.1"
   },
   "devDependencies": {
     "sort-object": "^3.0.0",
