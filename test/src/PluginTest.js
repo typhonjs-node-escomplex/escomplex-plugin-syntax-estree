@@ -7,17 +7,9 @@ import walker              from 'typhonjs-ast-walker';
 
 import PluginSyntaxESTree  from '../../src/PluginSyntaxESTree.js';
 
-const s_PLUGIN_PATH =      '../../dist/PluginSyntaxESTree';
-
-suite('NPM require plugin:', () =>
-{
-   test('require does not throw', () => { assert.doesNotThrow(() => { require(s_PLUGIN_PATH); }); });
-});
-
 const pluginData =
 [
-   { name: 'ESM', PluginClass: PluginSyntaxESTree },
-   { name: 'NPM', PluginClass: require(s_PLUGIN_PATH) }
+   { name: 'ESM', PluginClass: PluginSyntaxESTree }
 ];
 
 pluginData.forEach((plugin) =>
@@ -45,7 +37,22 @@ pluginData.forEach((plugin) =>
 
          test('plugin throws on empty event data', () =>
          {
+            assert.throws(() => { instance.onConfigure(); });
+         });
+
+         test('plugin throws on empty event data', () =>
+         {
             assert.throws(() => { instance.onLoadSyntax(); });
+         });
+
+         test('plugin passes back default settings data', () =>
+         {
+            const event = { data: { options: {}, settings: {}, syntaxes: {} } };
+            instance.onConfigure(event);
+            assert.strictEqual(event.data.settings.forin, false);
+            assert.strictEqual(event.data.settings.logicalor, true);
+            assert.strictEqual(event.data.settings.switchcase, true);
+            assert.strictEqual(event.data.settings.trycatch, false);
          });
 
          test('plugin does not throw on proper event data', () =>
