@@ -1,11 +1,11 @@
 'use strict';
 
-import { assert }          from 'chai';
-import fs                  from 'fs';
-import sortObj             from 'sort-object';
-import walker              from 'typhonjs-ast-walker';
+import { assert } from 'chai';
+import fs         from 'fs';
+import sortObj    from 'sort-object';
+import ASTWalker  from 'typhonjs-ast-walker/src/ASTWalker';
 
-import PluginSyntaxESTree  from '../../src/PluginSyntaxESTree.js';
+import PluginSyntaxESTree  from '../../src/PluginSyntaxESTree';
 
 const pluginData =
 [
@@ -98,7 +98,7 @@ pluginData.forEach((plugin) =>
             const event = { data: { settings: {}, syntaxes: {} } };
             instance.onLoadSyntax(event);
 
-            walker.traverse(JSON.parse(fs.readFileSync('./test/fixture/espree-estree.json', 'utf8')),
+            new ASTWalker().traverse(JSON.parse(fs.readFileSync('./test/fixture/espree-estree.json', 'utf8')),
             {
                enterNode: (node, parent) =>
                {
