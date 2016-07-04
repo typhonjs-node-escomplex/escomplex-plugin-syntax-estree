@@ -1,5 +1,3 @@
-'use strict';
-
 import AbstractSyntaxLoader   from 'typhonjs-escomplex-commons/src/module/plugin/syntax/AbstractSyntaxLoader';
 
 import actualize              from 'typhonjs-escomplex-commons/src/module/traits/actualize';
@@ -22,6 +20,10 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
     *
     * The following options are:
     * ```
+    * (boolean)   commonjs - Boolean indicating that source code being processed is CommonJS; defaults to false.
+    *
+    * (function)  dependencyResolver - Provides a function to resolve dynamic dependencies; defaults to undefined.
+    *
     * (boolean)   forin - Boolean indicating whether for...in / for...of loops should be considered a source of
     *                     cyclomatic complexity; defaults to false.
     *
@@ -37,6 +39,9 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
     */
    onConfigure(ev)
    {
+      ev.data.settings.commonjs = typeof ev.data.options.commonjs === 'boolean' ? ev.data.options.commonjs : false;
+      ev.data.settings.dependencyResolver = typeof ev.data.options.dependencyResolver === 'function' ?
+       ev.data.options.dependencyResolver : undefined;
       ev.data.settings.forin = typeof ev.data.options.forin === 'boolean' ? ev.data.options.forin : false;
       ev.data.settings.logicalor = typeof ev.data.options.logicalor === 'boolean' ? ev.data.options.logicalor : true;
       ev.data.settings.switchcase = typeof ev.data.options.switchcase === 'boolean' ? ev.data.options.switchcase : true;
@@ -82,13 +87,17 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
 
    /**
     * ES5 Node
+    *
+    * Processes CommonJS dependencies if settings.commonjs is set to true. An optional function
+    * settings.dependencyResolver may be used to resolve dynamic dependencies.
+
+    * @param {object}   settings - escomplex settings
+    *
     * @see https://github.com/estree/estree/blob/master/spec.md#callexpression
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
-   CallExpression()
+   CallExpression(settings)
    {
-      const amdPathAliases = {};
-
       return actualize(
        (node) => { return node.callee.type === 'FunctionExpression' ? 1 : 0; },   // lloc
        0,                                                                         // cyclomatic
@@ -98,133 +107,24 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
        undefined,                                                                 // newScope
        (node) =>
        {
-          if (node.callee.type === 'Identifier' && node.callee.name === 'require') { return processRequire(node); }
-
-          if (node.callee.type === 'MemberExpression' && node.callee.object.type === 'Identifier' &&
-           node.callee.object.name === 'require' && node.callee.property.type === 'Identifier' &&
-           node.callee.property.name === 'config')
+          // Only process CJS dependencies if settings.commonjs is true.
+          if (settings.commonjs && node.callee.type === 'Identifier' && node.callee.name === 'require' &&
+           node.arguments.length === 1)
           {
-             processAmdRequireConfig(node.arguments);
+             const dependency = node.arguments[0];
+
+             let dependencyPath = '* dynamic dependency *';
+
+             if (dependency.type === 'Literal' || dependency.type === 'StringLiteral')
+             {
+                dependencyPath = typeof settings.dependencyResolver === 'function' ?
+                 settings.dependencyResolver(dependency.value) : dependency.value;
+             }
+
+             return { line: node.loc.start.line, path: dependencyPath, type: 'cjs' };
           }
        }
       );
-
-      /**
-       * @param {object}   node - AST node
-       * @returns {*}
-       */
-      function processRequire(node)
-      {
-         if (node.arguments.length === 1) { return processCommonJsRequire(node); }
-         if (node.arguments.length === 2) { return processAmdRequire(node); }
-      }
-
-      /**
-       * @param {object}   node - AST node
-       * @returns {{line, path, type}|*}
-       */
-      function processCommonJsRequire(node)
-      {
-         return createDependency(node, resolveRequireDependency(node.arguments[0]), 'cjs');
-      }
-
-      /**
-       * Note: that `StringLiteral` supports Babylon AST.
-       * @param {object}   dependency -
-       * @param {function} resolver -
-       * @returns {*}
-       */
-      function resolveRequireDependency(dependency, resolver)
-      {
-         if (dependency.type === 'Literal' || dependency.type === 'StringLiteral')
-         {
-            if (typeof resolver === 'function') { return resolver(dependency.value); }
-
-            return dependency.value;
-         }
-
-         return '* dynamic dependency *';
-      }
-
-      /**
-       * @param {object}   node - AST node
-       * @param {string}   path - path to dependency
-       * @param {string}   type - dependency type
-       * @returns {{line: *, path: *, type: *}}
-       */
-      function createDependency(node, path, type) { return { line: node.loc.start.line, path, type }; }
-
-      /**
-       * @param {object}   node - AST node
-       * @returns {*}
-       */
-      function processAmdRequire(node)
-      {
-         if (node.arguments[0].type === 'ArrayExpression')
-         {
-            return node.arguments[0].elements.map(processAmdRequireItem.bind(null, node));
-         }
-
-         // Note: that `StringLiteral` supports Babylon AST.
-         if (node.arguments[0].type === 'Literal' || node.arguments[0].type === 'StringLiteral')
-         {
-            return processAmdRequireItem(node, node.arguments[0]);
-         }
-
-         return createDependency(node, '* dynamic dependencies *', 'amd');
-      }
-
-      /**
-       * @param {object}   node - AST node
-       * @param {string}   item - path or alias
-       * @returns {{line: *, path: *, type: *}}
-       */
-      function processAmdRequireItem(node, item)
-      {
-         return createDependency(node, resolveRequireDependency(item, resolveAmdRequireDependency), 'amd');
-      }
-
-      /**
-       * @param {string}   dependency - path or alias
-       * @returns {*}
-       */
-      function resolveAmdRequireDependency(dependency) { return amdPathAliases[dependency] || dependency; }
-
-      /**
-       * @param {Array} args -
-       */
-      function processAmdRequireConfig(args)
-      {
-         if (args.length === 1 && args[0].type === 'ObjectExpression')
-         {
-            args[0].properties.forEach(processAmdRequireConfigProperty);
-         }
-      }
-
-      /**
-       * @param {object}   property -
-       */
-      function processAmdRequireConfigProperty(property)
-      {
-         if (property.key.type === 'Identifier' && property.key.name === 'paths' &&
-          property.value.type === 'ObjectExpression')
-         {
-            property.value.properties.forEach(setAmdPathAlias);
-         }
-      }
-
-      /**
-       * Note: that `StringLiteral` supports Babylon AST.
-       * @param {object}   alias -
-       */
-      function setAmdPathAlias(alias)
-      {
-         if (alias.key.type === 'Identifier' && (alias.value.type === 'Literal' ||
-          alias.value.type === 'StringLiteral'))
-         {
-            amdPathAliases[alias.key.name] = alias.value.value;
-         }
-      }
    }
 
    /**
@@ -639,14 +539,18 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
 
    /**
     * ES6 Node
+    * @param {object}   settings - escomplex settings
     * @see https://github.com/estree/estree/blob/master/es6.md#importdeclaration
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
-   ImportDeclaration()
+   ImportDeclaration(settings)
    {
       return actualize(0, 0, ['import', 'from'], undefined, undefined, undefined, (node) =>
        {
-          return { line: node.source.loc.start.line, path: node.source.value, type: 'esm' };
+          const dependencyPath = typeof settings.dependencyResolver === 'function' ?
+           settings.dependencyResolver(node.source.value) : node.source.value;
+
+          return { line: node.source.loc.start.line, path: dependencyPath, type: 'esm' };
        }
       );
    }
