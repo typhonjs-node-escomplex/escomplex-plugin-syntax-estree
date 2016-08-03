@@ -1,7 +1,7 @@
 import AbstractSyntaxLoader   from 'typhonjs-escomplex-commons/src/module/plugin/syntax/AbstractSyntaxLoader';
 
 import actualize              from 'typhonjs-escomplex-commons/src/module/traits/actualize';
-import safeName               from 'typhonjs-escomplex-commons/src/module/traits/safeName';
+import TraitUtil              from 'typhonjs-escomplex-commons/src/module/traits/TraitUtil';
 
 /**
  * Provides an typhonjs-escomplex-module / ESComplexModule plugin which loads syntax definitions for trait resolution
@@ -41,7 +41,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
    {
       ev.data.settings.commonjs = typeof ev.data.options.commonjs === 'boolean' ? ev.data.options.commonjs : false;
       ev.data.settings.dependencyResolver = typeof ev.data.options.dependencyResolver === 'function' ?
-       ev.data.options.dependencyResolver : undefined;
+       ev.data.options.dependencyResolver : void 0;
       ev.data.settings.forin = typeof ev.data.options.forin === 'boolean' ? ev.data.options.forin : false;
       ev.data.settings.logicalor = typeof ev.data.options.logicalor === 'boolean' ? ev.data.options.logicalor : true;
       ev.data.settings.switchcase = typeof ev.data.options.switchcase === 'boolean' ? ev.data.options.switchcase : true;
@@ -102,9 +102,9 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
        (node) => { return node.callee.type === 'FunctionExpression' ? 1 : 0; },   // lloc
        0,                                                                         // cyclomatic
        '()',                                                                      // operators
-       undefined,                                                                 // operands
-       undefined,                                                                 // ignoreKeys
-       undefined,                                                                 // newScope
+       void 0,                                                                    // operands
+       void 0,                                                                    // ignoreKeys
+       void 0,                                                                    // newScope
        (node) =>
        {
           // Only process CJS dependencies if settings.commonjs is true.
@@ -197,11 +197,13 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
    FunctionDeclaration()
    {
       return actualize(1, 0,
-       (node) => { return typeof node.generator === 'boolean' && node.generator ? 'generatorfunction' : 'function'; },
        (node, parent) =>
        {
-          return parent && parent.type === 'MethodDefinition' ? safeName(parent.key) : safeName(node.id);
+          const operators = TraitUtil.safeComputedOperators(node, parent);
+          operators.push(typeof node.generator === 'boolean' && node.generator ? 'function*' : 'function');
+          return operators;
        },
+       (node, parent) => { return TraitUtil.safeComputedOperands(node, parent); },
        'id', 'method'
       );
    }
@@ -218,10 +220,15 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
    FunctionExpression()
    {
       return actualize(0, 0,
-       (node) => { return typeof node.generator === 'boolean' && node.generator ? 'generatorfunction' : 'function'; },
        (node, parent) =>
        {
-          return parent && parent.type === 'MethodDefinition' ? safeName(parent.key) : safeName(node.id);
+          const operators = TraitUtil.safeComputedOperators(node, parent);
+          operators.push(typeof node.generator === 'boolean' && node.generator ? 'function*' : 'function');
+          return operators;
+       },
+       (node, parent) =>
+       {
+          return TraitUtil.safeComputedOperands(node, parent);
        },
        'id', 'method'
       );
@@ -232,7 +239,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
     * @see https://github.com/estree/estree/blob/master/spec.md#identifier
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
-   Identifier() { return actualize(0, 0, undefined, (node) => { return node.name; }); }
+   Identifier() { return actualize(0, 0, void 0, (node) => { return node.name; }); }
 
    /**
     * ES5 Node
@@ -262,7 +269,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
     */
    Literal()
    {
-      return actualize(0, 0, undefined, (node) =>
+      return actualize(0, 0, void 0, (node) =>
        {
           return typeof node.value === 'string' ? `"${node.value}"` : node.value;
        }
@@ -333,7 +340,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
       return actualize(1, 0, (node) =>
        {
           return typeof node.shorthand === 'undefined' ? ':' :
-           typeof node.shorthand === 'boolean' && !node.shorthand ? ':' : undefined;
+           typeof node.shorthand === 'boolean' && !node.shorthand ? ':' : void 0;
        }
       );
    }
@@ -376,7 +383,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
     * @see https://github.com/estree/estree/blob/master/spec.md#thisexpression
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
-   ThisExpression() { return actualize(0, 0, undefined, 'this'); }
+   ThisExpression() { return actualize(0, 0, void 0, 'this'); }
 
    /**
     * ES5 Node
@@ -393,7 +400,11 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
     * @see https://github.com/estree/estree/blob/master/spec.md#trystatement
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
-   TryStatement() { return actualize(1, 0, undefined, undefined, ['guardedHandlers', 'handlers']); }
+   TryStatement()
+   {
+      return actualize(1, 0, (node) => { return node.finalizer ? ['try', 'finally'] : ['try']; }, void 0,
+       ['guardedHandlers', 'handlers']);
+   }
 
    /**
     * ES5 Node
@@ -455,10 +466,11 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
     */
    AssignmentPattern()
    {
-      return actualize(0, 0, (node) => { return node.operator; }, undefined, (node) =>
+      return actualize(0, 0, (node) => { return node.operator; }, void 0, (node) =>
        {
-          return node.left.type === 'MemberExpression' ? `${safeName(node.left.object)}.${node.left.property.name}` :
-           typeof node.left.id !== 'undefined' ? safeName(node.left.id) : safeName(node.left);
+          return node.left.type === 'MemberExpression' ? `${TraitUtil.safeName(node.left.object)}.${
+           node.left.property.name}` : typeof node.left.id !== 'undefined' ? TraitUtil.safeName(node.left.id) :
+            TraitUtil.safeName(node.left);
        }
       );
    }
@@ -475,7 +487,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
     * @see https://github.com/estree/estree/blob/master/es6.md#arrowfunctionexpression
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
-   ArrowFunctionExpression() { return actualize(0, 0, 'arrowfunction', undefined, undefined, 'method'); }
+   ArrowFunctionExpression() { return actualize(0, 0, 'function=>', void 0, void 0, 'method'); }
 
    /**
     * ES6 Node
@@ -489,14 +501,14 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
     * @see https://github.com/estree/estree/blob/master/es6.md#classdeclaration
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
-   ClassDeclaration() { return actualize(1, 0, 'class', undefined, undefined, 'class'); }
+   ClassDeclaration() { return actualize(1, 0, 'class', void 0, void 0, 'class'); }
 
    /**
     * ES6 Node
     * @see https://github.com/estree/estree/blob/master/es6.md#classexpression
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
-   ClassExpression() { return actualize(1, 0, 'class', undefined, undefined, 'class'); }
+   ClassExpression() { return actualize(1, 0, 'class', void 0, void 0, 'class'); }
 
    /**
     * ES6 Node
@@ -526,7 +538,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
     */
    ExportSpecifier()
    {
-      return actualize(0, 0, (node) => { return node.exported.name === node.local.name ? undefined : 'as'; });
+      return actualize(0, 0, (node) => { return node.exported.name === node.local.name ? void 0 : 'as'; });
    }
 
    /**
@@ -545,7 +557,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
     */
    ImportDeclaration(settings)
    {
-      return actualize(0, 0, ['import', 'from'], undefined, undefined, undefined, (node) =>
+      return actualize(0, 0, ['import', 'from'], void 0, void 0, void 0, (node) =>
        {
           const dependencyPath = typeof settings.dependencyResolver === 'function' ?
            settings.dependencyResolver(node.source.value) : node.source.value;
@@ -593,7 +605,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
        (node) =>
        {
           return typeof node.meta === 'string' && typeof node.property === 'string' ? [node.meta, node.property] :
-           undefined;
+           void 0;
        }
       );
    }
@@ -615,7 +627,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
           if (typeof node.static === 'boolean' && node.static) { operators.push('static'); }
           return operators;
        },
-       undefined,
+       void 0,
        'key'
       );
    }
@@ -646,7 +658,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
     * @see https://github.com/estree/estree/blob/master/es6.md#super
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
-   Super() { return actualize(0, 0, undefined, 'super'); }
+   Super() { return actualize(0, 0, void 0, 'super'); }
 
    /**
     * ES6 Node
@@ -662,7 +674,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
     */
    TemplateElement()
    {
-      return actualize(0, 0, undefined, (node) => { return node.value.cooked !== '' ? node.value.cooked : undefined; });
+      return actualize(0, 0, void 0, (node) => { return node.value.cooked !== '' ? node.value.cooked : void 0; });
    }
 
    /**
@@ -677,5 +689,11 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
     * @see https://github.com/estree/estree/blob/master/es6.md#yieldexpression
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
-   YieldExpression() { return actualize(1, 0, 'yield'); }
+   YieldExpression()
+   {
+      return actualize(1, 0, (node) =>
+      {
+         return typeof node.delegate === 'boolean' && node.delegate ? 'yield*' : 'yield';
+      });
+   }
 }
