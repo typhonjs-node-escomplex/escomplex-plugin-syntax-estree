@@ -20,7 +20,7 @@
     }
   ],
   "dependencies": {
-    "typhonjs-escomplex-commons": "^0.0.14"
+    "typhonjs-escomplex-commons": "^0.0.15"
   },
   "devDependencies": {
     "sort-object": "^3.0.0",
