@@ -1,7 +1,9 @@
 import AbstractSyntaxLoader   from 'typhonjs-escomplex-commons/src/module/plugin/syntax/AbstractSyntaxLoader';
 
-import actualize              from 'typhonjs-escomplex-commons/src/module/traits/actualize';
+import ASTParser              from 'typhonjs-escomplex-commons/src/utils/ast/ASTParser';
 import TraitUtil              from 'typhonjs-escomplex-commons/src/module/traits/TraitUtil';
+
+import actualize              from 'typhonjs-escomplex-commons/src/module/traits/actualize';
 
 /**
  * Provides an typhonjs-escomplex-module / ESComplexModule plugin which loads syntax definitions for trait resolution
@@ -98,33 +100,34 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
     */
    CallExpression(settings)
    {
-      return actualize(
-       (node) => { return node.callee.type === 'FunctionExpression' ? 1 : 0; },   // lloc
-       0,                                                                         // cyclomatic
-       '()',                                                                      // operators
-       void 0,                                                                    // operands
-       void 0,                                                                    // ignoreKeys
-       void 0,                                                                    // newScope
-       (node) =>
-       {
-          // Only process CJS dependencies if settings.commonjs is true.
-          if (settings.commonjs && node.callee.type === 'Identifier' && node.callee.name === 'require' &&
-           node.arguments.length === 1)
-          {
-             const dependency = node.arguments[0];
+      return actualize((node) =>                                                    // lloc
+      {
+         return node.callee.type === 'FunctionExpression' ? 1 : 0;
+      },
+      0,                                                                           // cyclomatic
+      '()',                                                                        // operators
+      void 0,                                                                      // operands
+      void 0,                                                                      // ignoreKeys
+      void 0,                                                                      // newScope
+      (node) =>
+      {
+         // Only process CJS dependencies if settings.commonjs is true.
+         if (settings.commonjs && node.callee.type === 'Identifier' && node.callee.name === 'require' &&
+          node.arguments.length === 1)
+         {
+            const dependency = node.arguments[0];
 
-             let dependencyPath = '* dynamic dependency *';
+            let dependencyPath = '* dynamic dependency *';
 
-             if (dependency.type === 'Literal' || dependency.type === 'StringLiteral')
-             {
-                dependencyPath = typeof settings.dependencyResolver === 'function' ?
-                 settings.dependencyResolver(dependency.value) : dependency.value;
-             }
+            if (dependency.type === 'Literal' || dependency.type === 'StringLiteral')
+            {
+               dependencyPath = typeof settings.dependencyResolver === 'function' ?
+                settings.dependencyResolver(dependency.value) : dependency.value;
+            }
 
-             return { line: node.loc.start.line, path: dependencyPath, type: 'cjs' };
-          }
-       }
-      );
+            return { line: node.loc.start.line, path: dependencyPath, type: 'cjs' };
+         }
+      });
    }
 
    /**
@@ -196,16 +199,26 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
     */
    FunctionDeclaration()
    {
-      return actualize(1, 0,
-       (node, parent) =>
-       {
-          const operators = TraitUtil.safeComputedOperators(node, parent);
+      return actualize(1, 0, (node, parent) =>
+      {
+         const operators = parent && parent.type === 'MethodDefinition' && typeof parent.computed === 'boolean' &&
+          parent.computed ? [...ASTParser.parse(parent.key).operators] : [];
+
           operators.push(typeof node.generator === 'boolean' && node.generator ? 'function*' : 'function');
           return operators;
-       },
-       (node, parent) => { return TraitUtil.safeComputedOperands(node, parent); },
-       'id', 'method'
-      );
+      },
+      (node, parent) => { return s_SAFE_COMPUTED_OPERANDS(node, parent); },
+      'id',
+      (node, parent) =>
+      {
+         return {
+            type: 'method',
+            name: s_SAFE_COMPUTED_NAME(node, parent),
+            lineStart: node.loc.start.line,
+            lineEnd: node.loc.end.line,
+            paramCount: node.params.length
+         };
+      });
    }
 
    /**
@@ -219,19 +232,29 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
     */
    FunctionExpression()
    {
-      return actualize(0, 0,
-       (node, parent) =>
-       {
-          const operators = TraitUtil.safeComputedOperators(node, parent);
-          operators.push(typeof node.generator === 'boolean' && node.generator ? 'function*' : 'function');
-          return operators;
-       },
-       (node, parent) =>
-       {
-          return TraitUtil.safeComputedOperands(node, parent);
-       },
-       'id', 'method'
-      );
+      return actualize(0, 0, (node, parent) =>
+      {
+         const operators = parent && parent.type === 'MethodDefinition' && typeof parent.computed === 'boolean' &&
+          parent.computed ? [...ASTParser.parse(parent.key).operators] : [];
+
+         operators.push(typeof node.generator === 'boolean' && node.generator ? 'function*' : 'function');
+         return operators;
+      },
+      (node, parent) =>
+      {
+         return s_SAFE_COMPUTED_OPERANDS(node, parent);
+      },
+      'id',
+      (node, parent) =>
+      {
+         return {
+            type: 'method',
+            name: s_SAFE_COMPUTED_NAME(node, parent),
+            lineStart: node.loc.start.line,
+            lineEnd: node.loc.end.line,
+            paramCount: node.params.length
+         };
+      });
    }
 
    /**
@@ -270,10 +293,9 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
    Literal()
    {
       return actualize(0, 0, void 0, (node) =>
-       {
-          return typeof node.value === 'string' ? `"${node.value}"` : node.value;
-       }
-      );
+      {
+         return typeof node.value === 'string' ? `"${node.value}"` : node.value;
+      });
    }
 
    /**
@@ -285,13 +307,12 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
    LogicalExpression(settings)
    {
       return actualize(0, (node) =>
-       {
-          const isAnd = node.operator === '&&';
-          const isOr = node.operator === '||';
-          return (isAnd || (settings.logicalor && isOr)) ? 1 : 0;
-       },
-       (node) => { return node.operator; }
-      );
+      {
+         const isAnd = node.operator === '&&';
+         const isOr = node.operator === '||';
+         return (isAnd || (settings.logicalor && isOr)) ? 1 : 0;
+      },
+      (node) => { return node.operator; });
    }
 
    /**
@@ -302,12 +323,11 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
    MemberExpression()
    {
       return actualize((node) =>
-       {
-          return ['ObjectExpression', 'ArrayExpression', 'FunctionExpression'].indexOf(node.object.type) === -1 ?
-           0 : 1;
-       },
-       0, '.'
-      );
+      {
+         return ['ObjectExpression', 'ArrayExpression', 'FunctionExpression'].indexOf(node.object.type) === -1 ?
+          0 : 1;
+      },
+      0, '.');
    }
 
    /**
@@ -338,11 +358,10 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
    Property()
    {
       return actualize(1, 0, (node) =>
-       {
-          return typeof node.shorthand === 'undefined' ? ':' :
-           typeof node.shorthand === 'boolean' && !node.shorthand ? ':' : void 0;
-       }
-      );
+      {
+         return typeof node.shorthand === 'undefined' ? ':' :
+          typeof node.shorthand === 'boolean' && !node.shorthand ? ':' : void 0;
+      });
    }
 
    /**
@@ -467,12 +486,11 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
    AssignmentPattern()
    {
       return actualize(0, 0, (node) => { return node.operator; }, void 0, (node) =>
-       {
-          return node.left.type === 'MemberExpression' ? `${TraitUtil.safeName(node.left.object)}.${
-           node.left.property.name}` : typeof node.left.id !== 'undefined' ? TraitUtil.safeName(node.left.id) :
-            TraitUtil.safeName(node.left);
-       }
-      );
+      {
+         return node.left.type === 'MemberExpression' ? `${TraitUtil.safeName(node.left.object)}.${
+          node.left.property.name}` : typeof node.left.id !== 'undefined' ? TraitUtil.safeName(node.left.id) :
+           TraitUtil.safeName(node.left);
+      });
    }
 
    /**
@@ -487,7 +505,19 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
     * @see https://github.com/estree/estree/blob/master/es6.md#arrowfunctionexpression
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
-   ArrowFunctionExpression() { return actualize(0, 0, 'function=>', void 0, void 0, 'method'); }
+   ArrowFunctionExpression()
+   {
+      return actualize(0, 0, 'function=>', void 0, void 0, (node) =>
+      {
+         return {
+            type: 'method',
+            name: TraitUtil.safeName(node),
+            lineStart: node.loc.start.line,
+            lineEnd: node.loc.end.line,
+            paramCount: node.params.length
+         };
+      });
+   }
 
    /**
     * ES6 Node
@@ -501,14 +531,36 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
     * @see https://github.com/estree/estree/blob/master/es6.md#classdeclaration
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
-   ClassDeclaration() { return actualize(1, 0, 'class', void 0, void 0, 'class'); }
+   ClassDeclaration()
+   {
+      return actualize(1, 0, 'class', void 0, void 0, (node) =>
+      {
+         return {
+            type: 'class',
+            name: TraitUtil.safeName(node.id),
+            lineStart: node.loc.start.line,
+            lineEnd: node.loc.end.line
+         };
+      });
+   }
 
    /**
     * ES6 Node
     * @see https://github.com/estree/estree/blob/master/es6.md#classexpression
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
-   ClassExpression() { return actualize(1, 0, 'class', void 0, void 0, 'class'); }
+   ClassExpression()
+   {
+      return actualize(1, 0, 'class', void 0, void 0, (node) =>
+      {
+         return {
+            type: 'class',
+            name: TraitUtil.safeName(node.id),
+            lineStart: node.loc.start.line,
+            lineEnd: node.loc.end.line
+         };
+      });
+   }
 
    /**
     * ES6 Node
@@ -558,13 +610,12 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
    ImportDeclaration(settings)
    {
       return actualize(0, 0, ['import', 'from'], void 0, void 0, void 0, (node) =>
-       {
-          const dependencyPath = typeof settings.dependencyResolver === 'function' ?
-           settings.dependencyResolver(node.source.value) : node.source.value;
+      {
+         const dependencyPath = typeof settings.dependencyResolver === 'function' ?
+          settings.dependencyResolver(node.source.value) : node.source.value;
 
-          return { line: node.source.loc.start.line, path: dependencyPath, type: 'esm' };
-       }
-      );
+         return { line: node.source.loc.start.line, path: dependencyPath, type: 'esm' };
+      });
    }
 
    /**
@@ -601,13 +652,11 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
     */
    MetaProperty()
    {
-      return actualize(0, 0, '.',
-       (node) =>
-       {
-          return typeof node.meta === 'string' && typeof node.property === 'string' ? [node.meta, node.property] :
-           void 0;
-       }
-      );
+      return actualize(0, 0, '.', (node) =>
+      {
+         return typeof node.meta === 'string' && typeof node.property === 'string' ? [node.meta, node.property] :
+          void 0;
+      });
    }
 
    /**
@@ -621,15 +670,14 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
    MethodDefinition()
    {
       return actualize(0, 0, (node) =>
-       {
-          const operators = [];
-          if (node.kind && (node.kind === 'get' || node.kind === 'set')) { operators.push(node.kind); }
-          if (typeof node.static === 'boolean' && node.static) { operators.push('static'); }
-          return operators;
-       },
-       void 0,
-       'key'
-      );
+      {
+         const operators = [];
+         if (node.kind && (node.kind === 'get' || node.kind === 'set')) { operators.push(node.kind); }
+         if (typeof node.static === 'boolean' && node.static) { operators.push('static'); }
+         return operators;
+      },
+      void 0,
+      'key');
    }
 
    /**
@@ -696,4 +744,91 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
          return typeof node.delegate === 'boolean' && node.delegate ? 'yield*' : 'yield';
       });
    }
+}
+
+/**
+ * Provides a utility method that determines the name of a method for ESTree / Babylon AST nodes. For ESTree the
+ * parent node must be accessed for class methods. If the name is a computed value and not a string literal then
+ * `astParse` is invoked to determine the computed name and is output as `<computed~${computed expression}>`.
+ *
+ * Note; ESTree has a parent node which defines the method name with a child FunctionExpression /
+ * FunctionDeclaration. Babylon AST only has ClassMethod with a child `key` providing the method name.
+ *
+ * @param {object}   node - The current AST node.
+ * @param {object}   parent - The parent AST node.
+ *
+ * @returns {string}
+ */
+function s_SAFE_COMPUTED_NAME(node, parent)
+{
+   let name;
+
+   // Handle ESTree case.
+   if (parent && parent.type === 'MethodDefinition')
+   {
+      if (typeof parent.computed === 'boolean' && parent.computed)
+      {
+         // The following will pick up a single literal computed value (string); expressions return
+         // `<computed>`.
+         name = parent.key.type === 'Literal' ? TraitUtil.safeValue(parent.key) :
+            `<computed~${ASTParser.parse(parent.key).source}>`;
+      }
+      else // Parent is not computed and `parent.key` is an `Identifier` node.
+      {
+         name = TraitUtil.safeName(parent.key);
+      }
+   }
+
+   // Last chance assignment handles other node types / expressions: arrow, yield, etc.
+   if (typeof name !== 'string')
+   {
+      name = TraitUtil.safeName(node.id || node.key);
+   }
+
+   return name;
+}
+
+/**
+ * Provides a utility method that determines the operands of a method for ESTree AST nodes. For ESTree the
+ * parent node must be accessed for class methods. If the name is a computed value and not a string literal then
+ * `astParse` is invoked to determine the computed operands.
+ *
+ * Note; ESTree has a parent node which defines the method name with a child FunctionExpression /
+ * FunctionDeclaration. Babylon AST only has ClassMethod with a child `key` providing the method name.
+ *
+ * @param {object}   node - The current AST node.
+ * @param {object}   parent - The parent AST node.
+ *
+ * @returns {Array<*>}
+ */
+function s_SAFE_COMPUTED_OPERANDS(node, parent)
+{
+   const operands = [];
+
+   if (parent && parent.type === 'MethodDefinition')
+   {
+      if (typeof parent.computed === 'boolean' && parent.computed)
+      {
+         // The following will pick up a single literal computed value (string).
+         if (parent.key.type === 'Literal')
+         {
+            operands.push(TraitUtil.safeValue(parent.key));
+         }
+         else // Fully evaluate AST node and children for computed operands.
+         {
+            operands.push(...ASTParser.parse(parent.key).operands);
+         }
+      }
+      else // Parent is not computed and `parent.key` is an `Identifier` node.
+      {
+         operands.push(TraitUtil.safeName(parent.key));
+      }
+   }
+
+   if (operands.length === 0)
+   {
+      operands.push(TraitUtil.safeName(node.id || node.key));
+   }
+
+   return operands;
 }
