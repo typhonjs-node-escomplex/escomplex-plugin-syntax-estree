@@ -413,7 +413,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
     * @see https://github.com/estree/estree/blob/master/spec.md#thisexpression
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
-   ThisExpression() { return actualize(0, 0, void 0, 'this'); }
+   ThisExpression() { return actualize(0, 0, 'this'); }
 
    /**
     * ES5 Node
