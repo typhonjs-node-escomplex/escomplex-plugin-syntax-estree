@@ -335,10 +335,14 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
    {
       return actualize((node) =>
       {
-         return ['ObjectExpression', 'ArrayExpression', 'FunctionExpression'].indexOf(node.object.type) === -1 ?
-          0 : 1;
+         return ['ObjectExpression', 'ArrayExpression', 'FunctionExpression'].indexOf(
+          node.object.type) === -1 ? 0 : 1;
       },
-      0, '.');
+      0,
+      (node) =>
+      {
+         return typeof node.computed === 'boolean' && node.computed ? '[]' : '.';
+      });
    }
 
    /**
