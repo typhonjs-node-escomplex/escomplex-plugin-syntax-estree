@@ -57,7 +57,18 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
     * @see https://github.com/estree/estree/blob/master/spec.md#arrayexpression
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
-   ArrayExpression() { return actualize(0, 0, '[]'); }
+   ArrayExpression()
+   {
+      return actualize(0, 0, (node) =>
+      {
+         const operators = ['[]'];
+         if (Array.isArray(node.elements) && node.elements.length > 0)  // Add length - 1 commas
+         {
+            operators.push(...(new Array(node.elements.length - 1).fill(',')));
+         }
+         return operators;
+      });
+   }
 
    /**
     * ES5 Node
