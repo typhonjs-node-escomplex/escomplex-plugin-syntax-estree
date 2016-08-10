@@ -305,7 +305,18 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
    {
       return actualize(0, 0, void 0, (node) =>
       {
-         return typeof node.value === 'string' ? `"${node.value}"` : node.value;
+         const operands = [];
+
+         if (typeof node.regex === 'object' && typeof node.raw !== 'undefined')
+         {
+            operands.push(node.raw);
+         }
+         else
+         {
+            operands.push(typeof node.value === 'string' ? `"${node.value}"` : node.value);
+         }
+
+         return operands;
       });
    }
 
