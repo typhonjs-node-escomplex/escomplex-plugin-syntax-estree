@@ -1,6 +1,8 @@
 import AbstractSyntaxLoader   from 'typhonjs-escomplex-commons/src/module/plugin/syntax/AbstractSyntaxLoader';
 
-import ASTParser              from 'typhonjs-escomplex-commons/src/utils/ast/ASTParser';
+import ASTGenerator           from 'typhonjs-escomplex-commons/src/utils/ast/ASTGenerator';
+
+import HalsteadArray          from 'typhonjs-escomplex-commons/src/module/traits/HalsteadArray';
 import TraitUtil              from 'typhonjs-escomplex-commons/src/module/traits/TraitUtil';
 
 import actualize              from 'typhonjs-escomplex-commons/src/module/traits/actualize';
@@ -26,6 +28,12 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
     *
     * (function)  dependencyResolver - Provides a function to resolve dynamic dependencies; defaults to undefined.
     *
+    * (boolean|object)  esmImportExport - As a boolean indicating whether ES Modules import / export statements
+    *                                     contribute to modules logical SLOC & Halstead operators / operands; defaults
+    *                                     to false. As an object separate boolean entries to set logical SLOC (lloc)
+    *                                     and operators / operands (halstead) are available to set these parameters
+    *                                     separately.
+    *
     * (boolean)   forin - Boolean indicating whether for...in / for...of loops should be considered a source of
     *                     cyclomatic complexity; defaults to false.
     *
@@ -35,6 +43,14 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
     * (boolean)   switchcase - Boolean indicating whether switch statements should be considered a source of cyclomatic
     *                          complexity; defaults to true.
     *
+    * (boolean|object)  templateExpressions - As a boolean indicating whether template literal expressions
+    *                                     contribute to logical SLOC & Halstead operators / operands; defaults
+    *                                     to `true`. As an object separate boolean entries to set logical SLOC (lloc)
+    *                                     and operators / operands (halstead) are available to set these parameters
+    *                                     separately. When `lloc` is true tagged template expressions
+    *                                     increment lloc by 1. If `halstead` is true then operators are added for '``'
+    *                                     and each instance of a `${...}` expression.
+
     * (boolean)   trycatch - Boolean indicating whether catch clauses should be considered a source of cyclomatic
     *                        complexity; defaults to false.
     * ```
@@ -42,11 +58,54 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
    onConfigure(ev)
    {
       ev.data.settings.commonjs = typeof ev.data.options.commonjs === 'boolean' ? ev.data.options.commonjs : false;
+
       ev.data.settings.dependencyResolver = typeof ev.data.options.dependencyResolver === 'function' ?
        ev.data.options.dependencyResolver : void 0;
+
+      if (typeof ev.data.options.esmImportExport === 'object')
+      {
+         ev.data.settings.esmImportExport =
+         {
+            halstead: typeof ev.data.options.esmImportExport.halstead === 'boolean' ?
+             ev.data.options.esmImportExport.halstead : false,
+
+            lloc: typeof ev.data.options.esmImportExport.lloc === 'boolean' ?
+               ev.data.options.esmImportExport.lloc : false,
+         };
+      }
+      else
+      {
+         // Catch all boolean to set `esmImportExport.halstead` & `esmImportExport.lloc` if a boolean is supplied.
+         const value = typeof ev.data.options.esmImportExport === 'boolean' ? ev.data.options.esmImportExport : false;
+         ev.data.settings.esmImportExport = { halstead: value, lloc: value };
+      }
+
       ev.data.settings.forin = typeof ev.data.options.forin === 'boolean' ? ev.data.options.forin : false;
+
       ev.data.settings.logicalor = typeof ev.data.options.logicalor === 'boolean' ? ev.data.options.logicalor : true;
+
       ev.data.settings.switchcase = typeof ev.data.options.switchcase === 'boolean' ? ev.data.options.switchcase : true;
+
+      if (typeof ev.data.options.templateExpression === 'object')
+      {
+         ev.data.settings.templateExpression =
+         {
+            halstead: typeof ev.data.options.templateExpression.halstead === 'boolean' ?
+             ev.data.options.templateExpression.halstead : true,
+
+            lloc: typeof ev.data.options.templateExpression.lloc === 'boolean' ?
+             ev.data.options.templateExpression.lloc : true,
+         };
+      }
+      else
+      {
+         // Catch all boolean to set `templateExpression.halstead` & `templateExpression.lloc` if a boolean is supplied.
+         const value = typeof ev.data.options.templateExpression === 'boolean' ? ev.data.options.templateExpression :
+          true;
+
+         ev.data.settings.templateExpression = { halstead: value, lloc: value };
+      }
+
       ev.data.settings.trycatch = typeof ev.data.options.trycatch === 'boolean' ? ev.data.options.trycatch : false;
    }
 
@@ -54,7 +113,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
 
    /**
     * ES5 Node
-    * @see https://github.com/estree/estree/blob/master/spec.md#arrayexpression
+    * @see https://github.com/estree/estree/blob/master/es5.md#arrayexpression
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    ArrayExpression()
@@ -72,28 +131,39 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
 
    /**
     * ES5 Node
-    * @see https://github.com/estree/estree/blob/master/spec.md#assignmentexpression
+    * @see https://github.com/estree/estree/blob/master/es5.md#assignmentexpression
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
-   AssignmentExpression() { return actualize(0, 0, (node) => { return node.operator; }); }
+   AssignmentExpression()
+   {
+      return actualize((node, parent) =>
+      {
+         // Handle multiple assignment such as `a = b = c = 1` which resolves logical SLOC of 3.
+         // The top most `ExpressionStatement` already provides 1 lloc and `AssignmentExpression` for 'c' & '1' are
+         // additionally counted as additional lloc.
+         return parent && parent.type !== 'ExpressionStatement' ? 1 : 0;
+      },
+      0,
+      (node) => { return node.operator; });
+   }
 
    /**
     * ES5 Node
-    * @see https://github.com/estree/estree/blob/master/spec.md#blockstatement
+    * @see https://github.com/estree/estree/blob/master/es5.md#blockstatement
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    BlockStatement() { return actualize(0, 0); }
 
    /**
     * ES5 Node
-    * @see https://github.com/estree/estree/blob/master/spec.md#binaryexpression
+    * @see https://github.com/estree/estree/blob/master/es5.md#binaryexpression
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    BinaryExpression() { return actualize(0, 0, (node) => { return node.operator; }); }
 
    /**
     * ES5 Node
-    * @see https://github.com/estree/estree/blob/master/spec.md#breakstatement
+    * @see https://github.com/estree/estree/blob/master/es5.md#breakstatement
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    BreakStatement() { return actualize(1, 0, 'break'); }
@@ -106,14 +176,17 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
 
     * @param {object}   settings - escomplex settings
     *
-    * @see https://github.com/estree/estree/blob/master/spec.md#callexpression
+    * @see https://github.com/estree/estree/blob/master/es5.md#callexpression
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    CallExpression(settings)
    {
-      return actualize((node) =>                                                    // lloc
+      return actualize((node, parent) =>                                           // lloc
       {
-         return node.callee.type === 'FunctionExpression' ? 1 : 0;
+         // Handles nested CallExpression nodes. Since ExpressionStatement provides 1 lloc already the first
+         // CallExpression ignores posting an additional lloc; subsequent CallExpression nodes do contribute 1 lloc.
+         // Likewise the first CallExpression after a YieldExpression doesn't contribute 1 lloc.
+         return parent && parent.type !== 'ExpressionStatement' && parent.type !== 'YieldExpression' ? 1 : 0;
       },
       0,                                                                           // cyclomatic
       '()',                                                                        // operators
@@ -144,60 +217,130 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
    /**
     * ES5 Node
     * @param {object}   settings - escomplex settings
-    * @see https://github.com/estree/estree/blob/master/spec.md#catchclause
+    * @see https://github.com/estree/estree/blob/master/es5.md#catchclause
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    CatchClause(settings) { return actualize(1, () => { return settings.trycatch ? 1 : 0; }, 'catch'); }
 
    /**
     * ES5 Node
-    * @see https://github.com/estree/estree/blob/master/spec.md#conditionalexpression
+    * @see https://github.com/estree/estree/blob/master/es5.md#conditionalexpression
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    ConditionalExpression() { return actualize(0, 1, ':?'); }
 
    /**
     * ES5 Node
-    * @see https://github.com/estree/estree/blob/master/spec.md#continuestatement
+    * @see https://github.com/estree/estree/blob/master/es5.md#continuestatement
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    ContinueStatement() { return actualize(1, 0, 'continue'); }
 
    /**
     * ES5 Node
-    * @see https://github.com/estree/estree/blob/master/spec.md#dowhilestatement
+    * @see https://github.com/estree/estree/blob/master/es5.md#dowhilestatement
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    DoWhileStatement() { return actualize(2, (node) => { return node.test ? 1 : 0; }, 'dowhile'); }
 
    /**
     * ES5 Node
-    * @see https://github.com/estree/estree/blob/master/spec.md#emptystatement
+    * @see https://github.com/estree/estree/blob/master/es5.md#emptystatement
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    EmptyStatement() { return actualize(0, 0); }
 
    /**
     * ES5 Node
-    * @see https://github.com/estree/estree/blob/master/spec.md#expressionstatement
+    * @see https://github.com/estree/estree/blob/master/es5.md#expressionstatement
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
-   ExpressionStatement() { return actualize(1, 0); }
+   ExpressionStatement()
+   {
+      return actualize((node) =>
+      {
+         // Ignore adding 1 lloc when the child expression is an ArrowFunctionExpression which is invalid / no-op.
+         return typeof node.expression === 'object' && node.expression.type !== 'ArrowFunctionExpression' ? 1 : 0;
+      },
+      0);
+   }
 
    /**
     * ES5 Node
     * @param {object}   settings - escomplex settings
-    * @see https://github.com/estree/estree/blob/master/spec.md#forinstatement
+    * @see https://github.com/estree/estree/blob/master/es5.md#forinstatement
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
-   ForInStatement(settings) { return actualize(1, () => { return settings.forin ? 1 : 0; }, 'forin'); }
+   ForInStatement(settings)
+   {
+      //return actualize(1, () => { return settings.forin ? 1 : 0; }, 'forin');
+
+      return actualize(1, () => { return settings.forin ? 1 : 0; }, (node) =>
+      {
+         const operators = ['forin'];
+         const childNodes = [];
+
+         if (node.left) { childNodes.push(node.left); }
+         if (node.right) { childNodes.push(node.right); }
+
+         if (childNodes.length > 0) { operators.push(...ASTGenerator.parseNodes(childNodes).operators); }
+
+         return operators;
+      },
+      (node) =>
+      {
+         const operands = [];
+         const childNodes = [];
+
+         if (node.left) { childNodes.push(node.left); }
+         if (node.right) { childNodes.push(node.right); }
+
+         if (childNodes.length > 0) { operands.push(...ASTGenerator.parseNodes(childNodes).operands); }
+
+         return operands;
+      },
+      ['left', 'right']);
+   }
 
    /**
     * ES5 Node
-    * @see https://github.com/estree/estree/blob/master/spec.md#forstatement
+    *
+    * Note: ASTGenerator is necessary to pick up operators / operands of `init, test, update` child nodes while
+    * excluding traversal / LLOC counts for these nodes.
+    *
+    * @see https://github.com/estree/estree/blob/master/es5.md#forstatement
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
-   ForStatement() { return actualize(1, (node) => { return node.test ? 1 : 0; }, 'for'); }
+   ForStatement()
+   {
+      return actualize(1, (node) => { return node.test ? 1 : 0; }, (node) =>
+      {
+         const operators = ['for'];
+         const childNodes = [];
+
+         if (node.init) { childNodes.push(node.init); }
+         if (node.test) { childNodes.push(node.test); }
+         if (node.update) { childNodes.push(node.update); }
+
+         if (childNodes.length > 0) { operators.push(...ASTGenerator.parseNodes(childNodes).operators); }
+
+         return operators;
+      },
+      (node) =>
+      {
+         const operands = [];
+         const childNodes = [];
+
+         if (node.init) { childNodes.push(node.init); }
+         if (node.test) { childNodes.push(node.test); }
+         if (node.update) { childNodes.push(node.update); }
+
+         if (childNodes.length > 0) { operands.push(...ASTGenerator.parseNodes(childNodes).operands); }
+
+         return operands;
+      },
+      ['init', 'test', 'update']);
+   }
 
    /**
     * ES5 Node
@@ -205,32 +348,117 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
     * Note: The function name (node.id) is returned as an operand and excluded from traversal as to not be included in
     * the function operand calculations.
     *
-    * @see https://github.com/estree/estree/blob/master/spec.md#functiondeclaration
+    * @see https://github.com/estree/estree/blob/master/es5.md#functiondeclaration
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    FunctionDeclaration()
    {
-      return actualize(1, 0, (node, parent) =>
+      return actualize(0, 0, void 0, void 0, ['id', 'params', 'defaults'], (node, parent) =>
       {
-         const operators = parent && parent.type === 'MethodDefinition' && typeof parent.computed === 'boolean' &&
-          parent.computed ? [...ASTParser.parse(parent.key).operators] : [];
+         const name = s_SAFE_COMPUTED_NAME(node, parent);
+         const operands = s_SAFE_COMPUTED_OPERANDS(node, parent);
+         const operators = [];
 
-          operators.push(typeof node.generator === 'boolean' && node.generator ? 'function*' : 'function');
-          return operators;
-      },
-      (node, parent) => { return s_SAFE_COMPUTED_OPERANDS(node, parent); },
-      'id',
-      (node, parent) =>
-      {
+         if (parent && parent.type === 'MethodDefinition')
+         {
+            if (typeof node.generator === 'boolean' && node.generator) { operators.push('function*'); }
+
+            if (typeof parent.computed === 'boolean' && parent.computed)
+            {
+               operators.push(...ASTGenerator.parse(parent.key).operators);
+            }
+         }
+         else
+         {
+            operators.push(typeof node.generator === 'boolean' && node.generator ? 'function*' : 'function');
+         }
+
+         const paramNames = [];
+
+         // Parse params; must use ASTGenerator
+         if (Array.isArray(node.params))
+         {
+            node.params.forEach((param) =>
+            {
+               const parsedParams = ASTGenerator.parse(param);
+               operands.push(...parsedParams.operands);
+               operators.push(...parsedParams.operators);
+
+               // For param names only the left hand node of AssignmentPattern must be considered.
+               if (param.type === 'AssignmentPattern')
+               {
+                  paramNames.push(...ASTGenerator.parse(param.left).operands);
+               }
+               else
+               {
+                  paramNames.push(...parsedParams.operands);
+               }
+            });
+         }
+
+         // Esprima default values; param default values are stored in a non-standard `defaults` node.
+         if (Array.isArray(node.defaults))
+         {
+            node.defaults.forEach((value) =>
+            {
+               if (value !== null && typeof value === 'object')
+               {
+                  const parsedParams = ASTGenerator.parse(value);
+                  operands.push(...parsedParams.operands);
+                  operators.push(...parsedParams.operators);
+                  operators.push('='); // Must also manually push '='
+               }
+            });
+         }
+
          return {
             type: 'method',
-            name: s_SAFE_COMPUTED_NAME(node, parent),
+            name,
+            cyclomatic: 1,
             lineStart: node.loc.start.line,
             lineEnd: node.loc.end.line,
-            paramCount: node.params.length
+            lloc: 1,
+            operands: new HalsteadArray('operands', operands),
+            operators: new HalsteadArray('operators', operators),
+            paramNames
          };
       });
    }
+
+   //FunctionDeclaration()
+   //{
+   //   return actualize(1, 0, (node, parent) =>
+   //   {
+   //      const operators = parent && parent.type === 'MethodDefinition' && typeof parent.computed === 'boolean' &&
+   //       parent.computed ? [...ASTGenerator.parse(parent.key).operators] : [];
+   //
+   //       if (parent && parent.type === 'MethodDefinition')
+   //       {
+   //          if (typeof node.generator === 'boolean' && node.generator)
+   //          {
+   //             operators.push('function*');
+   //          }
+   //       }
+   //       else
+   //       {
+   //          operators.push(typeof node.generator === 'boolean' && node.generator ? 'function*' : 'function');
+   //       }
+   //
+   //       return operators;
+   //   },
+   //   (node, parent) => { return s_SAFE_COMPUTED_OPERANDS(node, parent); },
+   //   'id',
+   //   (node, parent) =>
+   //   {
+   //      return {
+   //         type: 'method',
+   //         name: s_SAFE_COMPUTED_NAME(node, parent),
+   //         lineStart: node.loc.start.line,
+   //         lineEnd: node.loc.end.line,
+   //         paramCount: node.params.length
+   //      };
+   //   });
+   //}
 
    /**
     * ES5 Node
@@ -238,46 +466,130 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
     * Note: The function name (node.id) is returned as an operand and excluded from traversal as to not be included in
     * the function operand calculations.
     *
-    * @see https://github.com/estree/estree/blob/master/spec.md#functionexpression
+    * @see https://github.com/estree/estree/blob/master/es5.md#functionexpression
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    FunctionExpression()
    {
-      return actualize(0, 0, (node, parent) =>
+      return actualize(0, 0, void 0, void 0, ['id', 'params', 'defaults'], (node, parent) =>
       {
-         const operators = parent && parent.type === 'MethodDefinition' && typeof parent.computed === 'boolean' &&
-          parent.computed ? [...ASTParser.parse(parent.key).operators] : [];
+         const name = s_SAFE_COMPUTED_NAME(node, parent);
+         const operands = s_SAFE_COMPUTED_OPERANDS(node, parent);
+         const operators = [];
 
-         operators.push(typeof node.generator === 'boolean' && node.generator ? 'function*' : 'function');
-         return operators;
-      },
-      (node, parent) =>
-      {
-         return s_SAFE_COMPUTED_OPERANDS(node, parent);
-      },
-      'id',
-      (node, parent) =>
-      {
+         if (parent && parent.type === 'MethodDefinition')
+         {
+            if (typeof node.generator === 'boolean' && node.generator) { operators.push('function*'); }
+
+            if (typeof parent.computed === 'boolean' && parent.computed)
+            {
+               operators.push(...ASTGenerator.parse(parent.key).operators);
+            }
+         }
+         else
+         {
+            operators.push(typeof node.generator === 'boolean' && node.generator ? 'function*' : 'function');
+         }
+
+         const paramNames = [];
+
+         // Parse params; must use ASTGenerator
+         if (Array.isArray(node.params))
+         {
+            node.params.forEach((param) =>
+            {
+               const parsedParams = ASTGenerator.parse(param);
+               operands.push(...parsedParams.operands);
+               operators.push(...parsedParams.operators);
+
+               // For param names only the left hand node of AssignmentPattern must be considered.
+               if (param.type === 'AssignmentPattern')
+               {
+                  paramNames.push(...ASTGenerator.parse(param.left).operands);
+               }
+               else
+               {
+                  paramNames.push(...parsedParams.operands);
+               }
+            });
+         }
+
+         // Esprima default values; param default values are stored in a non-standard `defaults` node.
+         if (Array.isArray(node.defaults))
+         {
+            node.defaults.forEach((value) =>
+            {
+               if (value !== null && typeof value === 'object')
+               {
+                  const parsedParams = ASTGenerator.parse(value);
+                  operands.push(...parsedParams.operands);
+                  operators.push(...parsedParams.operators);
+                  operators.push('='); // Must also manually push '='
+               }
+            });
+         }
+
          return {
             type: 'method',
-            name: s_SAFE_COMPUTED_NAME(node, parent),
+            name,
+            cyclomatic: 1,
             lineStart: node.loc.start.line,
             lineEnd: node.loc.end.line,
-            paramCount: node.params.length
+            lloc: 1,
+            operands: new HalsteadArray('operands', operands),
+            operators: new HalsteadArray('operators', operators),
+            paramNames
          };
       });
    }
+   //FunctionExpression()
+   //{
+   //   return actualize(1, 0, (node, parent) =>
+   //   {
+   //      const operators = parent && parent.type === 'MethodDefinition' && typeof parent.computed === 'boolean' &&
+   //       parent.computed ? [...ASTGenerator.parse(parent.key).operators] : [];
+   //
+   //      if (parent && parent.type === 'MethodDefinition')
+   //      {
+   //         if (typeof node.generator === 'boolean' && node.generator)
+   //         {
+   //            operators.push('function*');
+   //         }
+   //      }
+   //      else
+   //      {
+   //         operators.push(typeof node.generator === 'boolean' && node.generator ? 'function*' : 'function');
+   //      }
+   //
+   //      return operators;
+   //   },
+   //   (node, parent) =>
+   //   {
+   //      return s_SAFE_COMPUTED_OPERANDS(node, parent);
+   //   },
+   //   'id',
+   //   (node, parent) =>
+   //   {
+   //      return {
+   //         type: 'method',
+   //         name: s_SAFE_COMPUTED_NAME(node, parent),
+   //         lineStart: node.loc.start.line,
+   //         lineEnd: node.loc.end.line,
+   //         paramCount: node.params.length
+   //      };
+   //   });
+   //}
 
    /**
     * ES5 Node
-    * @see https://github.com/estree/estree/blob/master/spec.md#identifier
+    * @see https://github.com/estree/estree/blob/master/es5.md#identifier
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    Identifier() { return actualize(0, 0, void 0, (node) => { return node.name; }); }
 
    /**
     * ES5 Node
-    * @see https://github.com/estree/estree/blob/master/spec.md#ifstatement
+    * @see https://github.com/estree/estree/blob/master/es5.md#ifstatement
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    IfStatement()
@@ -288,7 +600,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
 
    /**
     * ES5 Node
-    * @see https://github.com/estree/estree/blob/master/spec.md#labeledstatement
+    * @see https://github.com/estree/estree/blob/master/es5.md#labeledstatement
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    LabeledStatement() { return actualize(0, 0); }
@@ -298,7 +610,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
     *
     * Avoid conflicts between string literals and identifiers.
     *
-    * @see https://github.com/estree/estree/blob/master/spec.md#literal
+    * @see https://github.com/estree/estree/blob/master/es5.md#literal
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    Literal()
@@ -323,7 +635,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
    /**
     * ES5 Node
     * @param {object}   settings - escomplex settings
-    * @see https://github.com/estree/estree/blob/master/spec.md#logicalexpression
+    * @see https://github.com/estree/estree/blob/master/es5.md#logicalexpression
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    LogicalExpression(settings)
@@ -339,26 +651,17 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
 
    /**
     * ES5 Node
-    * @see https://github.com/estree/estree/blob/master/spec.md#memberexpression
+    * @see https://github.com/estree/estree/blob/master/es5.md#memberexpression
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    MemberExpression()
    {
-      return actualize((node) =>
-      {
-         return ['ObjectExpression', 'ArrayExpression', 'FunctionExpression'].indexOf(
-          node.object.type) === -1 ? 0 : 1;
-      },
-      0,
-      (node) =>
-      {
-         return typeof node.computed === 'boolean' && node.computed ? '[]' : '.';
-      });
+      return actualize(0, 0, (node) => { return typeof node.computed === 'boolean' && node.computed ? '[]' : '.'; });
    }
 
    /**
     * ES5 Node
-    * @see https://github.com/estree/estree/blob/master/spec.md#newexpression
+    * @see https://github.com/estree/estree/blob/master/es5.md#newexpression
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    NewExpression()
@@ -368,7 +671,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
 
    /**
     * ES5 Node
-    * @see https://github.com/estree/estree/blob/master/spec.md#objectexpression
+    * @see https://github.com/estree/estree/blob/master/es5.md#objectexpression
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    ObjectExpression() { return actualize(0, 0, '{}'); }
@@ -378,7 +681,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
     *
     * Note that w/ ES6+ `:` may be omitted and the Property node defines `shorthand` to indicate this case.
     *
-    * @see https://github.com/estree/estree/blob/master/spec.md#property
+    * @see https://github.com/estree/estree/blob/master/es5.md#property
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    Property()
@@ -392,14 +695,14 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
 
    /**
     * ES5 Node
-    * @see https://github.com/estree/estree/blob/master/spec.md#returnstatement
+    * @see https://github.com/estree/estree/blob/master/es5.md#returnstatement
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    ReturnStatement() { return actualize(1, 0, 'return'); }
 
    /**
     * ES5 Node
-    * @see https://github.com/estree/estree/blob/master/spec.md#sequenceexpression
+    * @see https://github.com/estree/estree/blob/master/es5.md#sequenceexpression
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    SequenceExpression() { return actualize(0, 0); }
@@ -407,7 +710,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
    /**
     * ES5 Node
     * @param {object}   settings - escomplex settings
-    * @see https://github.com/estree/estree/blob/master/spec.md#switchcase
+    * @see https://github.com/estree/estree/blob/master/es5.md#switchcase
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    SwitchCase(settings)
@@ -418,21 +721,21 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
 
    /**
     * ES5 Node
-    * @see https://github.com/estree/estree/blob/master/spec.md#switchstatement
+    * @see https://github.com/estree/estree/blob/master/es5.md#switchstatement
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    SwitchStatement() { return actualize(1, 0, 'switch'); }
 
    /**
     * ES5 Node
-    * @see https://github.com/estree/estree/blob/master/spec.md#thisexpression
+    * @see https://github.com/estree/estree/blob/master/es5.md#thisexpression
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    ThisExpression() { return actualize(0, 0, 'this'); }
 
    /**
     * ES5 Node
-    * @see https://github.com/estree/estree/blob/master/spec.md#throwstatement
+    * @see https://github.com/estree/estree/blob/master/es5.md#throwstatement
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    ThrowStatement() { return actualize(1, 0, 'throw'); }
@@ -442,7 +745,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
     *
     * Note: esprima has duplicate nodes the catch block; `handler` is the actual ESTree spec.
     *
-    * @see https://github.com/estree/estree/blob/master/spec.md#trystatement
+    * @see https://github.com/estree/estree/blob/master/es5.md#trystatement
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    TryStatement()
@@ -453,7 +756,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
 
    /**
     * ES5 Node
-    * @see https://github.com/estree/estree/blob/master/spec.md#unaryexpression
+    * @see https://github.com/estree/estree/blob/master/es5.md#unaryexpression
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    UnaryExpression()
@@ -463,7 +766,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
 
    /**
     * ES5 Node
-    * @see https://github.com/estree/estree/blob/master/spec.md#updateexpression
+    * @see https://github.com/estree/estree/blob/master/es5.md#updateexpression
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    UpdateExpression()
@@ -473,14 +776,14 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
 
    /**
     * ES5 Node
-    * @see https://github.com/estree/estree/blob/master/spec.md#variabledeclaration
+    * @see https://github.com/estree/estree/blob/master/es5.md#variabledeclaration
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    VariableDeclaration() { return actualize(0, 0, (node) => { return node.kind; }); }
 
    /**
     * ES5 Node
-    * @see https://github.com/estree/estree/blob/master/spec.md#variabledeclarator
+    * @see https://github.com/estree/estree/blob/master/es5.md#variabledeclarator
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    VariableDeclarator()
@@ -490,14 +793,14 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
 
    /**
     * ES5 Node
-    * @see https://github.com/estree/estree/blob/master/spec.md#whilestatement
+    * @see https://github.com/estree/estree/blob/master/es5.md#whilestatement
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    WhileStatement() { return actualize(1, (node) => { return node.test ? 1 : 0; }, 'while'); }
 
    /**
     * ES5 Node
-    * @see https://github.com/estree/estree/blob/master/spec.md#withstatement
+    * @see https://github.com/estree/estree/blob/master/es5.md#withstatement
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    WithStatement() { return actualize(1, 0, 'with'); }
@@ -506,22 +809,14 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
 
    /**
     * ES6 Node
-    * @see https://github.com/estree/estree/blob/master/es6.md#assignmentpattern
+    * @see https://github.com/estree/estree/blob/master/es2015.md#assignmentpattern
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
-   AssignmentPattern()
-   {
-      return actualize(0, 0, (node) => { return node.operator; }, void 0, (node) =>
-      {
-         return node.left.type === 'MemberExpression' ? `${TraitUtil.safeName(node.left.object)}.${
-          node.left.property.name}` : typeof node.left.id !== 'undefined' ? TraitUtil.safeName(node.left.id) :
-           TraitUtil.safeName(node.left);
-      });
-   }
+   AssignmentPattern() { return actualize(1, 0, (node) => { return node.operator; }); }
 
    /**
     * ES6 Node
-    * @see https://github.com/estree/estree/blob/master/es6.md#arraypattern
+    * @see https://github.com/estree/estree/blob/master/es2015.md#arraypattern
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    ArrayPattern()
@@ -539,114 +834,308 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
 
    /**
     * ES6 Node
-    * @see https://github.com/estree/estree/blob/master/es6.md#arrowfunctionexpression
+    *
+    * Note: If the parent node is an ExpressionStatement the arrow function is essentially a no-op / invalid. In this
+    * case no metrics are gathered, but a method is still registered with no data. Further analysis looking for methods
+    * with no logical SLOC will reveal this case.
+    *
+    * @see https://github.com/estree/estree/blob/master/es2015.md#arrowfunctionexpression
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    ArrowFunctionExpression()
    {
-      return actualize(0, 0, 'function=>', void 0, void 0, (node) =>
+      return actualize(0, 0, void 0, void 0, (node, parent) =>
       {
+         // If not valid do not traverse any children.
+         return parent && parent.type !== 'ExpressionStatement' ? ['id', 'params', 'defaults'] : null;
+      },
+      (node, parent) =>
+      {
+         const isValid = parent && parent.type !== 'ExpressionStatement';
+
+         let name = TraitUtil.safeName(node.id);
+         const operands = [];
+         const operators = isValid ? ['function=>'] : [];
+
+         const paramNames = [];
+
+         // Parse params; must use ASTGenerator
+         if (isValid && Array.isArray(node.params))
+         {
+            node.params.forEach((param) =>
+            {
+               const parsedParams = ASTGenerator.parse(param);
+               operands.push(...parsedParams.operands);
+               operators.push(...parsedParams.operators);
+
+               // For param names only the left hand node of AssignmentPattern must be considered.
+               if (param.type === 'AssignmentPattern')
+               {
+                  paramNames.push(...ASTGenerator.parse(param.left).operands);
+               }
+               else
+               {
+                  paramNames.push(...parsedParams.operands);
+               }
+            });
+         }
+
+         // Esprima default values; param default values are stored in a non-standard `defaults` node.
+         if (isValid && Array.isArray(node.defaults))
+         {
+            node.defaults.forEach((value) =>
+            {
+               if (value !== null && typeof value === 'object')
+               {
+                  const parsedParams = ASTGenerator.parse(value);
+                  operands.push(...parsedParams.operands);
+                  operators.push(...parsedParams.operators);
+                  operators.push('='); // Must also manually push '='
+               }
+            });
+         }
+
          return {
             type: 'method',
-            name: TraitUtil.safeName(node),
+            name,
+            cyclomatic: isValid ? 1 : 0,
             lineStart: node.loc.start.line,
             lineEnd: node.loc.end.line,
-            paramCount: node.params.length
+            lloc: isValid ? 1 : 0,
+            operands: isValid ? new HalsteadArray('operands', operands) : void 0,
+            operators: isValid ? new HalsteadArray('operators', operators) : void 0,
+            paramNames,
+
+            // ArrowFunctionExpressions without brackets have an implicit `return` expression so post increment lloc.
+            postLloc: isValid && typeof node.expression === 'boolean' && node.expression ? 1 : 0
          };
       });
    }
 
    /**
     * ES6 Node
-    * @see https://github.com/estree/estree/blob/master/es6.md#classbody
+    * @see https://github.com/estree/estree/blob/master/es2015.md#classbody
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    ClassBody() { return actualize(0, 0); }
 
+   ///**
+   // * ES6 Node
+   // * @see https://github.com/estree/estree/blob/master/es2015.md#classdeclaration
+   // * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
+   // */
+   //ClassDeclaration()
+   //{
+   //   return actualize(1, 0, 'class', void 0, void 0, (node) =>
+   //   {
+   //      return {
+   //         type: 'class',
+   //         name: TraitUtil.safeName(node.id),
+   //         lineStart: node.loc.start.line,
+   //         lineEnd: node.loc.end.line
+   //      };
+   //   });
+   //}
+   //
+   ///**
+   // * ES6 Node
+   // * @see https://github.com/estree/estree/blob/master/es2015.md#classexpression
+   // * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
+   // */
+   //ClassExpression()
+   //{
+   //   return actualize(1, 0, 'class', void 0, void 0, (node) =>
+   //   {
+   //      return {
+   //         type: 'class',
+   //         name: TraitUtil.safeName(node.id),
+   //         lineStart: node.loc.start.line,
+   //         lineEnd: node.loc.end.line
+   //      };
+   //   });
+   //}
+
    /**
     * ES6 Node
-    * @see https://github.com/estree/estree/blob/master/es6.md#classdeclaration
+    * @see https://github.com/estree/estree/blob/master/es2015.md#classdeclaration
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    ClassDeclaration()
    {
-      return actualize(1, 0, 'class', void 0, void 0, (node) =>
+      return actualize(0, 0, void 0, void 0, ['id', 'superClass'], (node) =>
       {
+         const name = TraitUtil.safeName(node.id);
+         const operands = name !== '<anonymous>' ? [name] : [];
+         const operators = ['class'];
+         let superClassName;
+
+         if (typeof node.superClass !== 'undefined' && node.superClass !== null)
+         {
+            const parsed = ASTGenerator.parse(node.superClass);
+
+            operators.push('extends');
+
+            operands.push(...parsed.operands);
+            operators.push(...parsed.operators);
+
+            // The following will pick up a Identifier or a computed value (string); computed expressions return
+            // `<computed~expression>`.
+            superClassName = node.superClass.type === 'Identifier' ? TraitUtil.safeName(node.superClass) :
+             `<computed~${parsed.source}>`;
+         }
+
          return {
             type: 'class',
-            name: TraitUtil.safeName(node.id),
+            name,
+            superClassName,
             lineStart: node.loc.start.line,
-            lineEnd: node.loc.end.line
+            lineEnd: node.loc.end.line,
+            lloc: 1,
+            operands: new HalsteadArray('operands', operands),
+            operators: new HalsteadArray('operators', operators)
          };
       });
    }
 
    /**
     * ES6 Node
-    * @see https://github.com/estree/estree/blob/master/es6.md#classexpression
+    * @see https://github.com/estree/estree/blob/master/es2015.md#classexpression
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    ClassExpression()
    {
-      return actualize(1, 0, 'class', void 0, void 0, (node) =>
+      return actualize(0, 0, void 0, void 0, ['id', 'superClass'], (node) =>
       {
+         const name = TraitUtil.safeName(node.id);
+         const operands = name !== '<anonymous>' ? [name] : [];
+         const operators = ['class'];
+         let superClassName;
+
+         if (typeof node.superClass !== 'undefined' && node.superClass !== null)
+         {
+            const parsed = ASTGenerator.parse(node.superClass);
+
+            operators.push('extends');
+
+            operands.push(...parsed.operands);
+            operators.push(...parsed.operators);
+
+            // The following will pick up a Identifier or a computed value (string); computed expressions return
+            // `<computed~expression>`.
+            superClassName = node.superClass.type === 'Identifier' ? TraitUtil.safeName(node.superClass) :
+             `<computed~${parsed.source}>`;
+         }
+
          return {
             type: 'class',
             name: TraitUtil.safeName(node.id),
+            superClassName,
             lineStart: node.loc.start.line,
-            lineEnd: node.loc.end.line
+            lineEnd: node.loc.end.line,
+            lloc: 1,
+            operands: new HalsteadArray('operands', operands),
+            operators: new HalsteadArray('operators', operators)
          };
       });
    }
 
    /**
     * ES6 Node
-    * @see https://github.com/estree/estree/blob/master/es6.md#exportalldeclaration
+    * @see https://github.com/estree/estree/blob/master/es2015.md#exportalldeclaration
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
-   ExportAllDeclaration() { return actualize(0, 0, ['export', '*']); }
-
-   /**
-    * ES6 Node
-    * @see https://github.com/estree/estree/blob/master/es6.md#exportdefaultdeclaration
-    * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
-    */
-   ExportDefaultDeclaration() { return actualize(0, 0, ['export', 'default']); }
-
-   /**
-    * ES6 Node
-    * @see https://github.com/estree/estree/blob/master/es6.md#exportnameddeclaration
-    * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
-    */
-   ExportNamedDeclaration() { return actualize(0, 0, ['export', '{}']); }
-
-   /**
-    * ES6 Node
-    * @see https://github.com/estree/estree/blob/master/es6.md#exportspecifier
-    * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
-    */
-   ExportSpecifier()
+   ExportAllDeclaration(settings)
    {
-      return actualize(0, 0, (node) => { return node.exported.name === node.local.name ? void 0 : 'as'; });
+      return actualize(settings.esmImportExport.lloc ? 1 : 0, 0, settings.esmImportExport.halstead ? ['export', '*'] :
+       void 0, void 0, settings.esmImportExport.halstead ? void 0 : null);
+   }
+
+   /**
+    * ES6 Node
+    * @see https://github.com/estree/estree/blob/master/es2015.md#exportdefaultdeclaration
+    * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
+    */
+   ExportDefaultDeclaration(settings)
+   {
+      return actualize(settings.esmImportExport.lloc ? 1 : 0, 0, settings.esmImportExport.halstead ?
+       ['export', 'default'] : void 0);
+   }
+
+   /**
+    * ES6 Node
+    * @see https://github.com/estree/estree/blob/master/es2015.md#exportnameddeclaration
+    * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
+    */
+   ExportNamedDeclaration(settings)
+   {
+      return actualize(settings.esmImportExport.lloc ? 1 : 0, 0, settings.esmImportExport.halstead ? ['export', '{}'] :
+       void 0, void 0, settings.esmImportExport.halstead ? void 0 : ['source', 'specifiers']);
+   }
+
+   /**
+    * ES6 Node
+    * @see https://github.com/estree/estree/blob/master/es2015.md#exportspecifier
+    * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
+    */
+   ExportSpecifier(settings)
+   {
+      return actualize(0, 0, !settings.esmImportExport.halstead ? void 0 : (node) =>
+      {
+         return node.exported.name !== node.local.name ? 'as' : void 0;
+      },
+      void 0,
+      !settings.esmImportExport.halstead ? null : (node) =>
+      {
+         return node.exported.name === node.local.name ? ['local'] : void 0;
+      });
    }
 
    /**
     * ES6 Node
     * @param {object}   settings - escomplex settings
-    * @see https://github.com/estree/estree/blob/master/es6.md#forofstatement
+    * @see https://github.com/estree/estree/blob/master/es2015.md#forofstatement
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
-   ForOfStatement(settings) { return actualize(1, () => { return settings.forin ? 1 : 0; }, 'forof'); }
+   ForOfStatement(settings)
+   {
+      return actualize(1, (node) => { return node.test ? 1 : 0; }, (node) =>
+      {
+         const operators = ['forof'];
+         const childNodes = [];
+
+         if (node.left) { childNodes.push(node.left); }
+         if (node.right) { childNodes.push(node.right); }
+
+         if (childNodes.length > 0) { operators.push(...ASTGenerator.parseNodes(childNodes).operators); }
+
+         return operators;
+      },
+      (node) =>
+      {
+         const operands = [];
+         const childNodes = [];
+
+         if (node.left) { childNodes.push(node.left); }
+         if (node.right) { childNodes.push(node.right); }
+
+         if (childNodes.length > 0) { operands.push(...ASTGenerator.parseNodes(childNodes).operands); }
+
+         return operands;
+      },
+      ['left', 'right']);
+   }
 
    /**
     * ES6 Node
     * @param {object}   settings - escomplex settings
-    * @see https://github.com/estree/estree/blob/master/es6.md#importdeclaration
+    * @see https://github.com/estree/estree/blob/master/es2015.md#importdeclaration
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    ImportDeclaration(settings)
    {
-      return actualize(0, 0, ['import', 'from'], void 0, void 0, void 0, (node) =>
+      return actualize(settings.esmImportExport.lloc ? 1 : 0, 0,
+       settings.esmImportExport.halstead ? ['import', 'from'] : void 0, void 0, settings.esmImportExport.halstead ?
+        void 0 : null, void 0, (node) =>
       {
          const dependencyPath = typeof settings.dependencyResolver === 'function' ?
           settings.dependencyResolver(node.source.value) : node.source.value;
@@ -657,26 +1146,35 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
 
    /**
     * ES6 Node
-    * @see https://github.com/estree/estree/blob/master/es6.md#importdefaultspecifier
+    * @see https://github.com/estree/estree/blob/master/es2015.md#importdefaultspecifier
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    ImportDefaultSpecifier() { return actualize(0, 0); }
 
    /**
     * ES6 Node
-    * @see https://github.com/estree/estree/blob/master/es6.md#importnamespacespecifier
+    * @see https://github.com/estree/estree/blob/master/es2015.md#importnamespacespecifier
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
-   ImportNamespaceSpecifier() { return actualize(0, 0, ['import', '*', 'as']); }
+   ImportNamespaceSpecifier(settings)
+   {
+      return actualize(0, 0, settings.esmImportExport.halstead ? ['import', '*', 'as'] : void 0, void 0,
+       settings.esmImportExport.halstead ? void 0 : null);
+   }
 
    /**
     * ES6 Node
-    * @see https://github.com/estree/estree/blob/master/es6.md#importspecifier
+    * @see https://github.com/estree/estree/blob/master/es2015.md#importspecifier
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
-   ImportSpecifier()
+   ImportSpecifier(settings)
    {
-      return actualize(0, 0, (node) => { return node.imported.name === node.local.name ? '{}' : ['{}', 'as']; });
+      return actualize(0, 0, !settings.esmImportExport.halstead ? void 0 : (node) =>
+      {
+         return node.imported.name === node.local.name ? '{}' : ['{}', 'as'];
+      },
+      void 0,
+      settings.esmImportExport.halstead ? void 0 : null);
    }
 
    /**
@@ -684,7 +1182,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
     *
     * Note: esprima doesn't follow the ESTree spec and `meta` & `property` are strings instead of Identifier nodes.
     *
-    * @see https://github.com/estree/estree/blob/master/es6.md#metaproperty
+    * @see https://github.com/estree/estree/blob/master/es2015.md#metaproperty
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    MetaProperty()
@@ -701,7 +1199,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
     *
     * Note: must skip as the following FunctionExpression assigns the name.
     *
-    * @see https://github.com/estree/estree/blob/master/es6.md#methoddefinition
+    * @see https://github.com/estree/estree/blob/master/es2015.md#methoddefinition
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    MethodDefinition()
@@ -719,42 +1217,42 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
 
    /**
     * ES6 Node
-    * @see https://github.com/estree/estree/blob/master/es6.md#objectpattern
+    * @see https://github.com/estree/estree/blob/master/es2015.md#objectpattern
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    ObjectPattern() { return actualize(0, 0, '{}'); }
 
    /**
     * ES6 Node
-    * @see https://github.com/estree/estree/blob/master/es6.md#restelement
+    * @see https://github.com/estree/estree/blob/master/es2015.md#restelement
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    RestElement() { return actualize(0, 0, '... (rest)'); }
 
    /**
     * ES6 Node
-    * @see https://github.com/estree/estree/blob/master/es6.md#spreadelement
+    * @see https://github.com/estree/estree/blob/master/es2015.md#spreadelement
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    SpreadElement() { return actualize(0, 0, '... (spread)'); }
 
    /**
     * ES6 Node
-    * @see https://github.com/estree/estree/blob/master/es6.md#super
+    * @see https://github.com/estree/estree/blob/master/es2015.md#super
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
-   Super() { return actualize(0, 0, void 0, 'super'); }
+   Super() { return actualize(0, 0, 'super'); }
 
    /**
     * ES6 Node
-    * @see https://github.com/estree/estree/blob/master/es6.md#taggedtemplateexpression
+    * @see https://github.com/estree/estree/blob/master/es2015.md#taggedtemplateexpression
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
-   TaggedTemplateExpression() { return actualize(0, 0); }
+   TaggedTemplateExpression(settings) { return actualize(settings.templateExpression.lloc ? 1 : 0, 0); }
 
    /**
     * ES6 Node
-    * @see https://github.com/estree/estree/blob/master/es6.md#templateelement
+    * @see https://github.com/estree/estree/blob/master/es2015.md#templateelement
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    TemplateElement()
@@ -764,19 +1262,39 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
 
    /**
     * ES6 Node
-    * @see https://github.com/estree/estree/blob/master/es6.md#templateliteral
+    * @see https://github.com/estree/estree/blob/master/es2015.md#templateliteral
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
-   TemplateLiteral() { return actualize(0, 0); }
+   TemplateLiteral(settings)
+   {
+      return actualize(0, 0,
+      !settings.templateExpression.halstead ? [] : (node) =>
+      {
+         const operators = ['``'];
+
+         if (Array.isArray(node.expressions) && node.expressions.length > 0)  // Add length '${}' elements.
+         {
+            operators.push(...(new Array(node.expressions.length).fill('${}')));
+         }
+
+         return operators;
+      });
+   }
 
    /**
     * ES6 Node
-    * @see https://github.com/estree/estree/blob/master/es6.md#yieldexpression
+    * @see https://github.com/estree/estree/blob/master/es2015.md#yieldexpression
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
    YieldExpression()
    {
-      return actualize(1, 0, (node) =>
+      return actualize((node, parent) =>
+      {
+         // The top most `ExpressionStatement` already provides 1 lloc.
+         return parent && parent.type !== 'ExpressionStatement' ? 1 : 0;
+      },
+      0,
+      (node) =>
       {
          return typeof node.delegate === 'boolean' && node.delegate ? 'yield*' : 'yield';
       });
@@ -806,9 +1324,9 @@ function s_SAFE_COMPUTED_NAME(node, parent)
       if (typeof parent.computed === 'boolean' && parent.computed)
       {
          // The following will pick up a single literal computed value (string); expressions return
-         // `<computed>`.
+         // `<computed~expression>`.
          name = parent.key.type === 'Literal' ? TraitUtil.safeValue(parent.key) :
-            `<computed~${ASTParser.parse(parent.key).source}>`;
+          `<computed~${ASTGenerator.parse(parent.key).source}>`;
       }
       else // Parent is not computed and `parent.key` is an `Identifier` node.
       {
@@ -816,7 +1334,7 @@ function s_SAFE_COMPUTED_NAME(node, parent)
       }
    }
 
-   // Last chance assignment handles other node types / expressions: arrow, yield, etc.
+   // Last chance assignment handles other node types such as FunctionExpression / ArrowFunctionExpression.
    if (typeof name !== 'string')
    {
       name = TraitUtil.safeName(node.id || node.key);
@@ -853,7 +1371,7 @@ function s_SAFE_COMPUTED_OPERANDS(node, parent)
          }
          else // Fully evaluate AST node and children for computed operands.
          {
-            operands.push(...ASTParser.parse(parent.key).operands);
+            operands.push(...ASTGenerator.parse(parent.key).operands);
          }
       }
       else // Parent is not computed and `parent.key` is an `Identifier` node.
@@ -862,7 +1380,9 @@ function s_SAFE_COMPUTED_OPERANDS(node, parent)
       }
    }
 
-   if (operands.length === 0)
+   // Only add further operands if the parent is not MethodDefinition and `node.id` or `node.key` is defined.
+   if (operands.length === 0 &&
+    ((typeof node.id !== 'undefined' && node.id !== null) || (typeof node.key !== 'undefined' && node.key !== null)))
    {
       operands.push(TraitUtil.safeName(node.id || node.key));
    }

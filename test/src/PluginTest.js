@@ -1,5 +1,3 @@
-'use strict';
-
 import { assert } from 'chai';
 import fs         from 'fs';
 import sortObj    from 'sort-object';
