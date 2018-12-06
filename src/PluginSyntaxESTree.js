@@ -273,7 +273,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
     */
    ForInStatement(settings)
    {
-      //return actualize(1, () => { return settings.forin ? 1 : 0; }, 'forin');
+      // return actualize(1, () => { return settings.forin ? 1 : 0; }, 'forin');
 
       return actualize(1, () => { return settings.forin ? 1 : 0; }, (node) =>
       {
@@ -425,8 +425,8 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
       });
    }
 
-   //FunctionDeclaration()
-   //{
+   // FunctionDeclaration()
+   // {
    //   return actualize(1, 0, (node, parent) =>
    //   {
    //      const operators = parent && parent.type === 'MethodDefinition' && typeof parent.computed === 'boolean' &&
@@ -458,7 +458,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
    //         paramCount: node.params.length
    //      };
    //   });
-   //}
+   // }
 
    /**
     * ES5 Node
@@ -542,8 +542,8 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
          };
       });
    }
-   //FunctionExpression()
-   //{
+   // FunctionExpression()
+   // {
    //   return actualize(1, 0, (node, parent) =>
    //   {
    //      const operators = parent && parent.type === 'MethodDefinition' && typeof parent.computed === 'boolean' &&
@@ -578,7 +578,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
    //         paramCount: node.params.length
    //      };
    //   });
-   //}
+   // }
 
    /**
     * ES5 Node
@@ -853,7 +853,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
       {
          const isValid = parent && parent.type !== 'ExpressionStatement';
 
-         let name = TraitUtil.safeName(node.id);
+         const name = TraitUtil.safeName(node.id);
          const operands = [];
          const operators = isValid ? ['function=>'] : [];
 
@@ -919,13 +919,13 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
     */
    ClassBody() { return actualize(0, 0); }
 
-   ///**
+   // /**
    // * ES6 Node
    // * @see https://github.com/estree/estree/blob/master/es2015.md#classdeclaration
    // * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
    // */
-   //ClassDeclaration()
-   //{
+   // ClassDeclaration()
+   // {
    //   return actualize(1, 0, 'class', void 0, void 0, (node) =>
    //   {
    //      return {
@@ -935,15 +935,15 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
    //         lineEnd: node.loc.end.line
    //      };
    //   });
-   //}
+   // }
    //
-   ///**
+   // /**
    // * ES6 Node
    // * @see https://github.com/estree/estree/blob/master/es2015.md#classexpression
    // * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
    // */
-   //ClassExpression()
-   //{
+   // ClassExpression()
+   // {
    //   return actualize(1, 0, 'class', void 0, void 0, (node) =>
    //   {
    //      return {
@@ -953,7 +953,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
    //         lineEnd: node.loc.end.line
    //      };
    //   });
-   //}
+   // }
 
    /**
     * ES6 Node
@@ -1041,6 +1041,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
 
    /**
     * ES6 Node
+    * @param {object} settings - Runtime settings of escomplex.
     * @see https://github.com/estree/estree/blob/master/es2015.md#exportalldeclaration
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
@@ -1052,6 +1053,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
 
    /**
     * ES6 Node
+    * @param {object} settings - Runtime settings of escomplex.
     * @see https://github.com/estree/estree/blob/master/es2015.md#exportdefaultdeclaration
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
@@ -1063,6 +1065,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
 
    /**
     * ES6 Node
+    * @param {object} settings - Runtime settings of escomplex.
     * @see https://github.com/estree/estree/blob/master/es2015.md#exportnameddeclaration
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
@@ -1074,6 +1077,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
 
    /**
     * ES6 Node
+    * @param {object} settings - Runtime settings of escomplex.
     * @see https://github.com/estree/estree/blob/master/es2015.md#exportspecifier
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
@@ -1092,11 +1096,10 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
 
    /**
     * ES6 Node
-    * @param {object}   settings - escomplex settings
     * @see https://github.com/estree/estree/blob/master/es2015.md#forofstatement
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
-   ForOfStatement(settings)
+   ForOfStatement()
    {
       return actualize(1, (node) => { return node.test ? 1 : 0; }, (node) =>
       {
@@ -1153,6 +1156,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
 
    /**
     * ES6 Node
+    * @param {object} settings - Runtime settings of escomplex.
     * @see https://github.com/estree/estree/blob/master/es2015.md#importnamespacespecifier
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
@@ -1164,6 +1168,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
 
    /**
     * ES6 Node
+    * @param {object} settings - Runtime settings of escomplex.
     * @see https://github.com/estree/estree/blob/master/es2015.md#importspecifier
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
@@ -1245,6 +1250,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
 
    /**
     * ES6 Node
+    * @param {object} settings - Runtime settings of escomplex.
     * @see https://github.com/estree/estree/blob/master/es2015.md#taggedtemplateexpression
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
@@ -1262,6 +1268,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
 
    /**
     * ES6 Node
+    * @param {object} settings - Runtime settings of escomplex.
     * @see https://github.com/estree/estree/blob/master/es2015.md#templateliteral
     * @returns {{lloc: *, cyclomatic: *, operators: *, operands: *, ignoreKeys: *, newScope: *, dependencies: *}}
     */
