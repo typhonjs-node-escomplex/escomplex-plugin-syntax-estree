@@ -907,7 +907,11 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
             paramNames,
 
             // ArrowFunctionExpressions without brackets have an implicit `return` expression so post increment lloc.
-            postLloc: isValid && typeof node.expression === 'boolean' && node.expression ? 1 : 0
+            postLloc: isValid && typeof node.body === 'object' && node.body.type !== 'BlockStatement' ? 1 : 0
+
+            // NOTE (altered 12/8/18): ESTree has expression entry which was removed in Babel Parser / 7.0 so
+            // node.body.type must be checked to determine if an expression or block / return statement.
+            // postLloc: isValid && typeof node.expression === 'boolean' && node.expression ? 1 : 0
          };
       });
    }
