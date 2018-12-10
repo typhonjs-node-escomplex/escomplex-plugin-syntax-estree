@@ -911,6 +911,7 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
 
             // NOTE (altered 12/8/18): ESTree has expression entry which was removed in Babel Parser / 7.0 so
             // node.body.type must be checked to determine if an expression or block / return statement.
+            // Reference: https://github.com/babel/babel/issues/6773
             // postLloc: isValid && typeof node.expression === 'boolean' && node.expression ? 1 : 0
          };
       });
