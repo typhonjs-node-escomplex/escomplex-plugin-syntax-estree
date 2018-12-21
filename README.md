@@ -8,6 +8,6 @@
 
 [![Build Status](https://travis-ci.org/typhonjs-node-escomplex/escomplex-plugin-syntax-estree.svg?branch=master)](https://travis-ci.org/typhonjs-node-escomplex/escomplex-plugin-syntax-estree)
 [![Coverage](https://img.shields.io/codecov/c/github/typhonjs-node-escomplex/escomplex-plugin-syntax-estree.svg)](https://codecov.io/github/typhonjs-node-escomplex/escomplex-plugin-syntax-estree)
-[![Dependency Status](https://www.versioneye.com/user/projects/575e33cd7757a0003bd4c2ca/badge.svg?style=flat)](https://www.versioneye.com/user/projects/575e33cd7757a0003bd4c2ca)
+[![Dependency Status](https://david-dm.org/typhonjs-node-escomplex/escomplex-plugin-syntax-estree/status.svg)](https://david-dm.org/typhonjs-node-escomplex/escomplex-plugin-syntax-estree)
 
 Provides a plugin for typhonjs-escomplex module processing which loads syntax definitions for trait resolution for ESTree AST.
