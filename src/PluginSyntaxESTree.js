@@ -211,6 +211,21 @@ export default class PluginSyntaxESTree extends AbstractSyntaxLoader
 
             return { line: node.loc.start.line, path: dependencyPath, type: 'cjs' };
          }
+
+         if (node.callee.type === 'Import' && node.arguments.length === 1)
+         {
+            const dependency = node.arguments[0];
+
+            let dependencyPath = '* dynamic dependency *';
+
+            if (dependency.type === 'Literal' || dependency.type === 'StringLiteral')
+            {
+               dependencyPath = typeof settings.dependencyResolver === 'function' ?
+                settings.dependencyResolver(dependency.value) : dependency.value;
+            }
+
+            return { line: node.loc.start.line, path: dependencyPath, type: 'esm' };
+         }
       });
    }
 
